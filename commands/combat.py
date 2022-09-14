@@ -1,15 +1,16 @@
 """
 This file should contain every combat-related commands at our disposal.
 A finished version of this file should contain:
-- The commands to attack/take various action [/] Implemented, not tested
-- Damage calculation [X] Unimplemented
-- An admin command to spawn weapons [X] Unimplemented
+- The commands to attack/take various action [✓] Implemented, Tested
+- Damage calculation [✓] Implemented, Tested
+- Weapon obj type [X] Unimplemented
 Weapons used in combat are simply checked in the player's inventory
 The template/basic weapon is contained in a seperate file called weapon.py
 """
-
+import time
 import random
 from evennia import Command, CmdSet
+from evennia import utils
 
 class CmdAttack(Command):
     """
@@ -38,11 +39,17 @@ class CmdAttack(Command):
     def func(self):
         cmdstring = self.cmdstring
         caller = self.caller
+
+        if self.caller.ndb.onCD:
+            # called when still in cooldown
+            self.caller.msg("|rAttack still on cooldown!|n")
+            return
+
         if cmdstring in ("attack", "fight"):
             text = "How do you want to fight? Choose 'hit' or 'defend'."
             caller.msg(text)
             return
-
+        
         # parry mode
         if cmdstring in ("defend"):
             text = ("You raise your weapon in a defensive pose, ready to block the next enemy attack.")
@@ -65,6 +72,9 @@ class CmdAttack(Command):
             # the damage chance in weapons is accessed as:
             # self.obj.db.damage
             damage = 1 + caller.db.power
+            # the attack cooldown (in seconds) in weapons is accessed as:
+            # self.obj.db.cooldown
+            cooldown = 5
             string = "You slash with %s. " % self.obj.key
             tstring = "%s slash at you with %s. " % (caller.key, self.obj.key)
             ostring = "%s slash at %s with %s. " % (caller.key, target.key, self.obj.key)
@@ -81,8 +91,8 @@ class CmdAttack(Command):
             hit *= 0.55 - (float(caller.db.power)/100*5)
 
         if random.random() <= hit:
-            caller.msg(string + "|gIt's a hit!|n")
-            target.msg(tstring + "|rIt's a hit!|n")
+            caller.msg(f"{string}\n|gYou hit {target.key}!\n {damage} damage!|n")
+            target.msg(f"{tstring}\n|r{caller.key} hit you!\n {damage} damage!|n")
             caller.location.msg_contents(ostring + "It's a hit!", exclude=[target, caller])
 
 
@@ -101,6 +111,15 @@ class CmdAttack(Command):
             caller.msg(string + "|rYou miss.|n")
             target.msg(tstring + "|gThey miss you.|n")
             caller.location.msg_contents(ostring + "They miss.", exclude=[target, caller])
+
+        
+        self.caller.ndb.onCD = True
+        # initiates the next cooldown based on the weapon used just now.
+        utils.delay(cooldown, self.cdrecover)
+    
+    def cdrecover(self):
+        del self.caller.ndb.onCD           
+        self.caller.msg("|gYou regain your bearings!|n")
 
 class CmdSetCombat(CmdSet):
     def at_cmdset_creation(self):
